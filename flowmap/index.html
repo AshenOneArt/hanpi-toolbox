@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Flowmap Viewer · HanPi 百宝箱</title>
+  <title>Flowmap · HanPi 百宝箱</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -35,34 +35,51 @@
       border-bottom: 1px solid var(--line);
       background: var(--panel);
     }
-    header a {
-      color: var(--muted);
-      text-decoration: none;
-      font-size: 0.9rem;
-    }
+    header a { color: var(--muted); text-decoration: none; font-size: 0.9rem; }
     header a:hover { color: var(--accent); }
-    header h1 {
-      margin: 0;
-      font-size: 1.15rem;
-      font-weight: 700;
-    }
+    header h1 { margin: 0; font-size: 1.15rem; font-weight: 700; }
     header h1 span { color: var(--accent); }
     .layout {
       display: grid;
-      grid-template-columns: 280px 1fr;
+      grid-template-columns: 300px 1fr;
       min-height: calc(100vh - 57px);
     }
-    @media (max-width: 860px) {
-      .layout { grid-template-columns: 1fr; }
-    }
+    @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
     aside {
       border-right: 1px solid var(--line);
       background: var(--panel);
       padding: 16px;
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 12px;
+      overflow: auto;
     }
+    .tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      background: var(--panel2);
+      padding: 4px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+    }
+    .tabs button {
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font: inherit;
+      font-size: 0.85rem;
+      font-weight: 600;
+      padding: 8px 6px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .tabs button.active {
+      background: var(--accent-dim);
+      color: var(--text);
+    }
+    .panel { display: none; flex-direction: column; gap: 12px; }
+    .panel.active { display: flex; }
     .drop {
       border: 1px dashed var(--line);
       border-radius: 10px;
@@ -73,15 +90,12 @@
     }
     .drop:hover, .drop.drag { border-color: var(--accent-dim); }
     .drop .label {
-      font-size: 0.78rem;
+      font-size: 0.72rem;
       color: var(--muted);
       margin-bottom: 4px;
       font-family: "JetBrains Mono", monospace;
     }
-    .drop .name {
-      font-size: 0.92rem;
-      word-break: break-all;
-    }
+    .drop .name { font-size: 0.9rem; word-break: break-all; }
     .drop input { display: none; }
     label.row {
       display: flex;
@@ -98,22 +112,43 @@
       text-align: right;
     }
     input[type="range"] { width: 100%; accent-color: var(--accent); }
-    .checks {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      font-size: 0.9rem;
-    }
+    .checks { display: flex; flex-direction: column; gap: 8px; font-size: 0.9rem; }
     .checks label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+    .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    button.action {
+      border: 1px solid var(--accent-dim);
+      background: rgba(61, 207, 142, 0.12);
+      color: var(--text);
+      font: inherit;
+      font-size: 0.88rem;
+      font-weight: 600;
+      padding: 10px 8px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    button.action:hover { border-color: var(--accent); }
+    button.action:disabled { opacity: 0.45; cursor: not-allowed; }
+    button.action.secondary {
+      background: transparent;
+      border-color: var(--line);
+      color: var(--muted);
+    }
+    .status {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.75rem;
+      color: var(--muted);
+      min-height: 1.2em;
+    }
+    .status.busy { color: var(--accent); }
     .hint {
-      font-size: 0.8rem;
+      font-size: 0.78rem;
       color: var(--muted);
       line-height: 1.45;
       margin-top: auto;
     }
     .hint code {
       font-family: "JetBrains Mono", monospace;
-      font-size: 0.76rem;
+      font-size: 0.72rem;
       color: var(--accent);
     }
     .stage {
@@ -133,31 +168,50 @@
     canvas#gl {
       max-width: 100%;
       max-height: calc(100vh - 100px);
-      width: auto;
-      height: auto;
       border: 1px solid var(--line);
       border-radius: 8px;
       background: #000;
-      image-rendering: auto;
     }
   </style>
 </head>
 <body>
   <header>
     <a href="../">← HanPi 百宝箱</a>
-    <h1>Flowmap <span>Viewer</span></h1>
+    <h1>Flowmap <span>工具</span></h1>
   </header>
   <div class="layout">
     <aside>
-      <div class="drop" id="dropSrc" data-kind="src">
-        <div class="label">SOURCE</div>
-        <div class="name" id="nameSrc">拖入原图，或点击选择</div>
-        <input type="file" accept="image/*" />
+      <div class="tabs">
+        <button type="button" class="active" data-mode="preview">双图预览</button>
+        <button type="button" data-mode="generate">单图生成</button>
       </div>
-      <div class="drop" id="dropFlow" data-kind="flow">
-        <div class="label">FLOWMAP (RG)</div>
-        <div class="name" id="nameFlow">拖入 flowmap，或点击选择</div>
-        <input type="file" accept="image/*" />
+
+      <div class="panel active" id="panelPreview">
+        <div class="drop" id="dropSrc" data-kind="src">
+          <div class="label">SOURCE</div>
+          <div class="name" id="nameSrc">拖入源纹理</div>
+          <input type="file" accept="image/*" />
+        </div>
+        <div class="drop" id="dropFlow" data-kind="flow">
+          <div class="label">FLOWMAP (RG)</div>
+          <div class="name" id="nameFlow">拖入 flowmap</div>
+          <input type="file" accept="image/*" />
+        </div>
+      </div>
+
+      <div class="panel" id="panelGenerate">
+        <div class="drop" id="dropGen" data-kind="gen">
+          <div class="label">SOURCE → FLOWMAP</div>
+          <div class="name" id="nameGen">拖入一张纹理，生成 flowmap</div>
+          <input type="file" accept="image/*" />
+        </div>
+        <label class="row">Tensor σ <span class="v" id="vTensor">6.0</span></label>
+        <input type="range" id="tensorSigma" min="1" max="16" step="0.5" value="6" />
+        <div class="btn-row">
+          <button type="button" class="action" id="btnGenerate">生成</button>
+          <button type="button" class="action secondary" id="btnDownload" disabled>下载 Flowmap</button>
+        </div>
+        <div class="status" id="genStatus"></div>
       </div>
 
       <label class="row">Strength <span class="v" id="vStrength">0.04</span></label>
@@ -166,20 +220,20 @@
       <label class="row">Speed <span class="v" id="vSpeed">0.35</span></label>
       <input type="range" id="speed" min="0" max="2" step="0.01" value="0.35" />
 
-      <label class="row">Time (manual) <span class="v" id="vTime">0.00</span></label>
+      <label class="row">Time <span class="v" id="vTime">0.00</span></label>
       <input type="range" id="time" min="0" max="10" step="0.01" value="0" />
 
       <div class="checks">
         <label><input type="checkbox" id="play" checked /> 自动播放</label>
-        <label><input type="checkbox" id="pingpong" checked /> Ping-pong（双采样混合）</label>
-        <label><input type="checkbox" id="showFlow" /> 显示 Flowmap 本身</label>
-        <label><input type="checkbox" id="invertY" /> 翻转 Flow Y（排查轴向）</label>
+        <label><input type="checkbox" id="pingpong" checked /> Ping-pong</label>
+        <label><input type="checkbox" id="showFlow" /> 显示 Flowmap</label>
+        <label><input type="checkbox" id="invertY" /> 翻转 Flow Y</label>
       </div>
 
       <p class="hint">
-        Unity / HDRP 常见解码：<br />
-        <code>flow = tex.rg * 2 - 1</code><br />
-        贴图仅在本地 GPU 采样，不会上传。
+        <strong>双图预览</strong>：自己导入源图 + flowmap。<br />
+        <strong>单图生成</strong>：结构张量估方向，编码为 Unity <code>RG = 0.5+0.5·dir</code>，并立刻预览扭曲。<br />
+        全部本地处理，不上传。
       </p>
     </aside>
     <div class="stage">
@@ -188,6 +242,8 @@
   </div>
 
   <script type="module">
+    import { extractFlowmap, imageToGray, rgbaToImageBitmap } from "./extract.js";
+
     const canvas = document.getElementById("gl");
     const gl = canvas.getContext("webgl", { alpha: false, premultipliedAlpha: false });
     if (!gl) {
@@ -203,7 +259,6 @@
         gl_Position = vec4(aPos, 0.0, 1.0);
       }
     `;
-
     const fs = `
       precision mediump float;
       varying vec2 vUv;
@@ -236,19 +291,13 @@
           gl_FragColor = texture2D(uSrc, vUv);
           return;
         }
-
         vec2 flow = texture2D(uFlow, vUv).rg * 2.0 - 1.0;
         if (uInvertY > 0.5) flow.y = -flow.y;
-
         float phase = fract(uTime);
         vec2 o0 = flow * uStrength * phase;
         vec2 o1 = flow * uStrength * (phase - 1.0);
-
         vec4 c0 = texture2D(uSrc, vUv + o0);
-        if (uPingPong < 0.5) {
-          gl_FragColor = c0;
-          return;
-        }
+        if (uPingPong < 0.5) { gl_FragColor = c0; return; }
         vec4 c1 = texture2D(uSrc, vUv + o1);
         float w = abs(phase * 2.0 - 1.0);
         gl_FragColor = mix(c0, c1, w);
@@ -259,19 +308,14 @@
       const s = gl.createShader(type);
       gl.shaderSource(s, src);
       gl.compileShader(s);
-      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
-        throw new Error(gl.getShaderInfoLog(s));
-      }
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
       return s;
     }
-
     const prog = gl.createProgram();
     gl.attachShader(prog, compile(gl.VERTEX_SHADER, vs));
     gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, fs));
     gl.linkProgram(prog);
-    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-      throw new Error(gl.getProgramInfoLog(prog));
-    }
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
     gl.useProgram(prog);
 
     const buf = gl.createBuffer();
@@ -314,6 +358,9 @@
       hasFlow: false,
       time: 0,
       last: performance.now(),
+      genImage: null,
+      flowCanvas: null,
+      flowName: "flowmap.png",
     };
 
     function upload(tex, img) {
@@ -335,24 +382,41 @@
       canvas.height = h;
     }
 
-    function loadFile(file, kind) {
-      const url = URL.createObjectURL(file);
-      const img = new Image();
-      img.onload = () => {
-        if (kind === "src") {
-          upload(texSrc, img);
-          state.hasSrc = true;
-          fitCanvas(img);
-          document.getElementById("nameSrc").textContent = file.name;
-        } else {
-          upload(texFlow, img);
-          state.hasFlow = true;
-          if (!state.hasSrc) fitCanvas(img);
-          document.getElementById("nameFlow").textContent = file.name;
-        }
-        URL.revokeObjectURL(url);
-      };
-      img.src = url;
+    function loadImageFile(file) {
+      return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+          URL.revokeObjectURL(url);
+          resolve(img);
+        };
+        img.onerror = reject;
+        img.src = url;
+      });
+    }
+
+    async function loadFile(file, kind) {
+      const img = await loadImageFile(file);
+      if (kind === "src") {
+        upload(texSrc, img);
+        state.hasSrc = true;
+        fitCanvas(img);
+        document.getElementById("nameSrc").textContent = file.name;
+      } else if (kind === "flow") {
+        upload(texFlow, img);
+        state.hasFlow = true;
+        if (!state.hasSrc) fitCanvas(img);
+        document.getElementById("nameFlow").textContent = file.name;
+      } else if (kind === "gen") {
+        state.genImage = img;
+        state.flowName = file.name.replace(/\.[^.]+$/, "") + "_flowmap.png";
+        document.getElementById("nameGen").textContent = file.name;
+        document.getElementById("genStatus").textContent = "已载入，点击「生成」";
+        document.getElementById("genStatus").classList.remove("busy");
+        upload(texSrc, img);
+        state.hasSrc = true;
+        fitCanvas(img);
+      }
     }
 
     function wireDrop(el) {
@@ -374,25 +438,88 @@
     }
     wireDrop(document.getElementById("dropSrc"));
     wireDrop(document.getElementById("dropFlow"));
+    wireDrop(document.getElementById("dropGen"));
+
+    // Mode tabs
+    const tabs = document.querySelectorAll(".tabs button");
+    const panelPreview = document.getElementById("panelPreview");
+    const panelGenerate = document.getElementById("panelGenerate");
+    tabs.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        tabs.forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        const mode = btn.dataset.mode;
+        panelPreview.classList.toggle("active", mode === "preview");
+        panelGenerate.classList.toggle("active", mode === "generate");
+      });
+    });
 
     const elStrength = document.getElementById("strength");
     const elSpeed = document.getElementById("speed");
     const elTime = document.getElementById("time");
+    const elTensor = document.getElementById("tensorSigma");
     const elPlay = document.getElementById("play");
     const elPing = document.getElementById("pingpong");
     const elShowFlow = document.getElementById("showFlow");
     const elInvertY = document.getElementById("invertY");
+    const genStatus = document.getElementById("genStatus");
+    const btnGenerate = document.getElementById("btnGenerate");
+    const btnDownload = document.getElementById("btnDownload");
 
     function syncLabels() {
       document.getElementById("vStrength").textContent = Number(elStrength.value).toFixed(3);
       document.getElementById("vSpeed").textContent = Number(elSpeed.value).toFixed(2);
       document.getElementById("vTime").textContent = Number(elTime.value).toFixed(2);
+      document.getElementById("vTensor").textContent = Number(elTensor.value).toFixed(1);
     }
-    [elStrength, elSpeed, elTime].forEach((el) => el.addEventListener("input", syncLabels));
+    [elStrength, elSpeed, elTime, elTensor].forEach((el) => el.addEventListener("input", syncLabels));
     syncLabels();
+    elTime.addEventListener("input", () => { state.time = Number(elTime.value); });
 
-    elTime.addEventListener("input", () => {
-      state.time = Number(elTime.value);
+    btnGenerate.addEventListener("click", async () => {
+      if (!state.genImage) {
+        genStatus.textContent = "请先拖入一张纹理";
+        return;
+      }
+      btnGenerate.disabled = true;
+      btnDownload.disabled = true;
+      genStatus.classList.add("busy");
+      genStatus.textContent = "生成中（大图可能要几秒）…";
+      await new Promise((r) => setTimeout(r, 30));
+      try {
+        const t0 = performance.now();
+        const { gray, w, h } = imageToGray(state.genImage, 1024);
+        const { rgba } = extractFlowmap(gray, w, h, {
+          gradSigma: 1,
+          tensorSigma: Number(elTensor.value),
+          invertY: true,
+        });
+        const flowCanvas = rgbaToImageBitmap(rgba, w, h);
+        state.flowCanvas = flowCanvas;
+        upload(texSrc, state.genImage);
+        upload(texFlow, flowCanvas);
+        state.hasSrc = true;
+        state.hasFlow = true;
+        fitCanvas(state.genImage);
+        document.getElementById("nameFlow").textContent = "(generated)";
+        btnDownload.disabled = false;
+        genStatus.classList.remove("busy");
+        genStatus.textContent = `完成 ${w}×${h} · ${(performance.now() - t0).toFixed(0)}ms · 已可预览`;
+      } catch (err) {
+        console.error(err);
+        genStatus.classList.remove("busy");
+        genStatus.textContent = "生成失败：" + (err?.message || err);
+      } finally {
+        btnGenerate.disabled = false;
+      }
+    });
+
+    btnDownload.addEventListener("click", () => {
+      if (!state.flowCanvas) return;
+      const a = document.createElement("a");
+      a.href = state.flowCanvas.toDataURL("image/png");
+      a.download = state.flowName || "flowmap.png";
+      a.click();
     });
 
     function frame(now) {
@@ -417,7 +544,6 @@
       gl.uniform1f(loc.uShowFlow, elShowFlow.checked ? 1 : 0);
       gl.uniform1f(loc.uPingPong, elPing.checked ? 1 : 0);
       gl.uniform1f(loc.uInvertY, elInvertY.checked ? 1 : 0);
-
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       requestAnimationFrame(frame);
     }
