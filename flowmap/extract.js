@@ -169,9 +169,9 @@ function makeVectorSeamless(vx, vy, w, h, band) {
  */
 export function extractFlowmap(gray, w, h, opts = {}) {
   const gradSigma = opts.gradSigma ?? 1.0;
-  const tensorSigma = opts.tensorSigma ?? 6.0;
+  const tensorSigma = opts.tensorSigma ?? 16.0;
   // Large blur → continuous isocontour guide (kills 180° domain walls)
-  const guideSigma = opts.guideSigma ?? Math.max(12, tensorSigma * 2.5);
+  const guideSigma = opts.guideSigma ?? 48.0;
   // Soften directed vectors after sign alignment
   const vectorSigma = opts.vectorSigma ?? Math.max(2, tensorSigma * 0.35);
   const invertY = opts.invertY ?? true;

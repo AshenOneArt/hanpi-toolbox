@@ -205,10 +205,10 @@
           <div class="name" id="nameGen">拖入一张纹理，生成 flowmap</div>
           <input type="file" accept="image/*" />
         </div>
-        <label class="row">Tensor σ <span class="v" id="vTensor">6.0</span></label>
-        <input type="range" id="tensorSigma" min="1" max="16" step="0.5" value="6" />
-        <label class="row">连续引导 σ <span class="v" id="vGuide">16.0</span></label>
-        <input type="range" id="guideSigma" min="4" max="48" step="1" value="16" />
+        <label class="row">Tensor σ <span class="v" id="vTensor">16.0</span></label>
+        <input type="range" id="tensorSigma" min="1" max="16" step="0.5" value="16" />
+        <label class="row">连续引导 σ <span class="v" id="vGuide">48.0</span></label>
+        <input type="range" id="guideSigma" min="4" max="48" step="1" value="48" />
         <label class="row">边界软化 <span class="v" id="vSeam">32</span></label>
         <input type="range" id="seamBand" min="4" max="96" step="1" value="32" />
         <div class="checks">
@@ -221,11 +221,11 @@
         <div class="status" id="genStatus"></div>
       </div>
 
-      <label class="row">Strength <span class="v" id="vStrength">0.04</span></label>
-      <input type="range" id="strength" min="0" max="0.25" step="0.001" value="0.04" />
+      <label class="row">Strength <span class="v" id="vStrength">0.080</span></label>
+      <input type="range" id="strength" min="0" max="0.25" step="0.001" value="0.08" />
 
-      <label class="row">Speed <span class="v" id="vSpeed">0.35</span></label>
-      <input type="range" id="speed" min="0" max="2" step="0.01" value="0.35" />
+      <label class="row">Speed <span class="v" id="vSpeed">0.23</span></label>
+      <input type="range" id="speed" min="0" max="2" step="0.01" value="0.23" />
 
       <label class="row">Time <span class="v" id="vTime">0.00</span></label>
       <input type="range" id="time" min="0" max="10" step="0.01" value="0" />
@@ -233,8 +233,8 @@
       <div class="checks">
         <label><input type="checkbox" id="play" checked /> 自动播放</label>
         <label><input type="checkbox" id="pingpong" checked /> Ping-pong</label>
-        <label class="row">乒乓锐度 <span class="v" id="vBlend">2.0</span></label>
-        <input type="range" id="blendSharp" min="0.5" max="4" step="0.1" value="2" />
+        <label class="row">乒乓锐度 <span class="v" id="vBlend">1.0</span></label>
+        <input type="range" id="blendSharp" min="0.5" max="4" step="0.1" value="1" />
         <label><input type="checkbox" id="showFlow" /> 显示 Flowmap</label>
         <label><input type="checkbox" id="tilePreview" /> 2×2 平铺预览（查接缝）</label>
         <label><input type="checkbox" id="invertY" /> 翻转 Flow Y</label>
