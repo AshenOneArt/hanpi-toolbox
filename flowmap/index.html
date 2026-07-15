@@ -228,6 +228,8 @@
       <div class="checks">
         <label><input type="checkbox" id="play" checked /> 自动播放</label>
         <label><input type="checkbox" id="pingpong" checked /> Ping-pong</label>
+        <label class="row">乒乓锐度 <span class="v" id="vBlend">2.0</span></label>
+        <input type="range" id="blendSharp" min="0.5" max="4" step="0.1" value="2" />
         <label><input type="checkbox" id="showFlow" /> 显示 Flowmap</label>
         <label><input type="checkbox" id="invertY" /> 翻转 Flow Y</label>
       </div>
@@ -273,6 +275,7 @@
       uniform float uShowFlow;
       uniform float uPingPong;
       uniform float uInvertY;
+      uniform float uBlendSharp;
 
       void main() {
         if (uHasFlow < 0.5 && uHasSrc < 0.5) {
@@ -296,21 +299,28 @@
         vec2 flow = texture2D(uFlow, vUv).rg * 2.0 - 1.0;
         if (uInvertY > 0.5) flow.y = -flow.y;
 
-        // Single layer: UV keeps drifting (will jump when you manually loop time)
+        // Single layer: continuous drift (visible jump if time wraps)
         if (uPingPong < 0.5) {
-          float t = uTime;
-          gl_FragColor = texture2D(uSrc, vUv + flow * uStrength * t);
+          gl_FragColor = texture2D(uSrc, vUv - flow * uStrength * uTime);
           return;
         }
 
-        // Classic dual-sample flowmap ping-pong (half-period offset)
+        // Catlike-style dual layer: centered offset + per-layer weight
+        // Weight is 0 at wrap (hide the resetting layer), 1 at mid-cycle.
         float t0 = fract(uTime);
         float t1 = fract(uTime + 0.5);
-        vec4 c0 = texture2D(uSrc, vUv + flow * uStrength * t0);
-        vec4 c1 = texture2D(uSrc, vUv + flow * uStrength * t1);
-        // Weight 1 at wrap (0/1), 0 at mid — hide the layer that is resetting
-        float w = abs(t0 * 2.0 - 1.0);
-        gl_FragColor = mix(c0, c1, w);
+        float w0 = 1.0 - abs(2.0 * t0 - 1.0);
+        float w1 = 1.0 - abs(2.0 * t1 - 1.0);
+        // Sharpen weights → less dual-ghosting, tighter handoff at wrap
+        float sharp = max(uBlendSharp, 0.5);
+        w0 = pow(max(w0, 0.0), sharp);
+        w1 = pow(max(w1, 0.0), sharp);
+        // Centered in [-0.5,0.5] so mean UV stays put (less swimming)
+        vec2 uv0 = vUv - flow * uStrength * (t0 - 0.5);
+        vec2 uv1 = vUv - flow * uStrength * (t1 - 0.5);
+        vec4 c0 = texture2D(uSrc, uv0);
+        vec4 c1 = texture2D(uSrc, uv1);
+        gl_FragColor = (c0 * w0 + c1 * w1) / max(w0 + w1, 1e-4);
       }
     `;
 
@@ -345,6 +355,7 @@
       uShowFlow: gl.getUniformLocation(prog, "uShowFlow"),
       uPingPong: gl.getUniformLocation(prog, "uPingPong"),
       uInvertY: gl.getUniformLocation(prog, "uInvertY"),
+      uBlendSharp: gl.getUniformLocation(prog, "uBlendSharp"),
     };
 
     function makeTex() {
@@ -471,6 +482,7 @@
     const elGuide = document.getElementById("guideSigma");
     const elPlay = document.getElementById("play");
     const elPing = document.getElementById("pingpong");
+    const elBlend = document.getElementById("blendSharp");
     const elShowFlow = document.getElementById("showFlow");
     const elInvertY = document.getElementById("invertY");
     const genStatus = document.getElementById("genStatus");
@@ -483,8 +495,9 @@
       document.getElementById("vTime").textContent = Number(elTime.value).toFixed(2);
       document.getElementById("vTensor").textContent = Number(elTensor.value).toFixed(1);
       document.getElementById("vGuide").textContent = Number(elGuide.value).toFixed(1);
+      document.getElementById("vBlend").textContent = Number(elBlend.value).toFixed(1);
     }
-    [elStrength, elSpeed, elTime, elTensor, elGuide].forEach((el) => el.addEventListener("input", syncLabels));
+    [elStrength, elSpeed, elTime, elTensor, elGuide, elBlend].forEach((el) => el.addEventListener("input", syncLabels));
     syncLabels();
     elTime.addEventListener("input", () => { state.time = Number(elTime.value); });
 
@@ -557,6 +570,7 @@
       gl.uniform1f(loc.uShowFlow, elShowFlow.checked ? 1 : 0);
       gl.uniform1f(loc.uPingPong, elPing.checked ? 1 : 0);
       gl.uniform1f(loc.uInvertY, elInvertY.checked ? 1 : 0);
+      gl.uniform1f(loc.uBlendSharp, Number(elBlend.value));
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       requestAnimationFrame(frame);
     }
