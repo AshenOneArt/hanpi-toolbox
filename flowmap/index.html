@@ -207,6 +207,8 @@
         </div>
         <label class="row">Tensor σ <span class="v" id="vTensor">6.0</span></label>
         <input type="range" id="tensorSigma" min="1" max="16" step="0.5" value="6" />
+        <label class="row">连续引导 σ <span class="v" id="vGuide">16.0</span></label>
+        <input type="range" id="guideSigma" min="4" max="48" step="1" value="16" />
         <div class="btn-row">
           <button type="button" class="action" id="btnGenerate">生成</button>
           <button type="button" class="action secondary" id="btnDownload" disabled>下载 Flowmap</button>
@@ -232,8 +234,8 @@
 
       <p class="hint">
         <strong>双图预览</strong>：自己导入源图 + flowmap。<br />
-        <strong>单图生成</strong>：结构张量估方向，编码为 Unity <code>RG = 0.5+0.5·dir</code>，并立刻预览扭曲。<br />
-        全部本地处理，不上传。
+        <strong>单图生成</strong>：结构张量估取向，再用大尺度梯度引导消掉 180° 翻转；编码 <code>RG = 0.5+0.5·dir</code>。<br />
+        Tensor 只影响细节平滑；「连续引导 σ」才管大块品红/绿对切。全部本地处理。
       </p>
     </aside>
     <div class="stage">
@@ -458,6 +460,7 @@
     const elSpeed = document.getElementById("speed");
     const elTime = document.getElementById("time");
     const elTensor = document.getElementById("tensorSigma");
+    const elGuide = document.getElementById("guideSigma");
     const elPlay = document.getElementById("play");
     const elPing = document.getElementById("pingpong");
     const elShowFlow = document.getElementById("showFlow");
@@ -471,8 +474,9 @@
       document.getElementById("vSpeed").textContent = Number(elSpeed.value).toFixed(2);
       document.getElementById("vTime").textContent = Number(elTime.value).toFixed(2);
       document.getElementById("vTensor").textContent = Number(elTensor.value).toFixed(1);
+      document.getElementById("vGuide").textContent = Number(elGuide.value).toFixed(1);
     }
-    [elStrength, elSpeed, elTime, elTensor].forEach((el) => el.addEventListener("input", syncLabels));
+    [elStrength, elSpeed, elTime, elTensor, elGuide].forEach((el) => el.addEventListener("input", syncLabels));
     syncLabels();
     elTime.addEventListener("input", () => { state.time = Number(elTime.value); });
 
@@ -492,6 +496,7 @@
         const { rgba } = extractFlowmap(gray, w, h, {
           gradSigma: 1,
           tensorSigma: Number(elTensor.value),
+          guideSigma: Number(elGuide.value),
           invertY: true,
         });
         const flowCanvas = rgbaToImageBitmap(rgba, w, h);

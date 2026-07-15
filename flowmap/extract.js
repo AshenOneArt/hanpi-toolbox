@@ -1,6 +1,10 @@
 /**
  * Structure-tensor flowmap extraction (Unity-style RG encode).
  * Image space: +x right, +y down. Output invertY matches Unity UV +y up.
+ *
+ * Continuity: local orientation is unsigned (180° ambiguous). We align every
+ * pixel's direction to a continuous "guide" field = 90°-rotated gradient of a
+ * heavily blurred source, so magenta/green domain walls collapse.
  */
 
 function gaussianKernel(sigma) {
@@ -46,6 +50,23 @@ function blurSeparable(src, w, h, sigma) {
   return out;
 }
 
+function gradient(src, w, h) {
+  const gx = new Float32Array(w * h);
+  const gy = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      const xl = (x - 1 + w) % w;
+      const xr = (x + 1) % w;
+      const yu = (y - 1 + h) % h;
+      const yd = (y + 1) % h;
+      gx[i] = 0.5 * (src[y * w + xr] - src[y * w + xl]);
+      gy[i] = 0.5 * (src[yd * w + x] - src[yu * w + x]);
+    }
+  }
+  return { gx, gy };
+}
+
 function percentile(arr, p) {
   const a = Array.from(arr);
   a.sort((x, y) => x - y);
@@ -57,39 +78,30 @@ function percentile(arr, p) {
  * @param {Float32Array} gray 0..1
  * @param {number} w
  * @param {number} h
- * @param {{gradSigma?: number, tensorSigma?: number, invertY?: boolean}} opts
- * @returns {{rgba: Uint8ClampedArray, w: number, h: number}}
+ * @param {{gradSigma?: number, tensorSigma?: number, guideSigma?: number, vectorSigma?: number, invertY?: boolean}} opts
  */
 export function extractFlowmap(gray, w, h, opts = {}) {
   const gradSigma = opts.gradSigma ?? 1.0;
   const tensorSigma = opts.tensorSigma ?? 6.0;
+  // Large blur → continuous isocontour guide (kills 180° domain walls)
+  const guideSigma = opts.guideSigma ?? Math.max(12, tensorSigma * 2.5);
+  // Soften directed vectors after sign alignment
+  const vectorSigma = opts.vectorSigma ?? Math.max(2, tensorSigma * 0.35);
   const invertY = opts.invertY ?? true;
 
-  let g = gray;
   let gmin = Infinity;
   let gmax = -Infinity;
-  for (let i = 0; i < g.length; i++) {
-    if (g[i] < gmin) gmin = g[i];
-    if (g[i] > gmax) gmax = g[i];
+  for (let i = 0; i < gray.length; i++) {
+    if (gray[i] < gmin) gmin = gray[i];
+    if (gray[i] > gmax) gmax = gray[i];
   }
   const span = Math.max(gmax - gmin, 1e-8);
-  const norm = new Float32Array(g.length);
-  for (let i = 0; i < g.length; i++) norm[i] = (g[i] - gmin) / span;
+  const norm = new Float32Array(gray.length);
+  for (let i = 0; i < gray.length; i++) norm[i] = (gray[i] - gmin) / span;
 
+  // --- Local orientation via structure tensor (unsigned) ---
   const gs = blurSeparable(norm, w, h, gradSigma);
-  const gx = new Float32Array(w * h);
-  const gy = new Float32Array(w * h);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const i = y * w + x;
-      const xl = (x - 1 + w) % w;
-      const xr = (x + 1) % w;
-      const yu = (y - 1 + h) % h;
-      const yd = (y + 1) % h;
-      gx[i] = 0.5 * (gs[y * w + xr] - gs[y * w + xl]);
-      gy[i] = 0.5 * (gs[yd * w + x] - gs[yu * w + x]);
-    }
-  }
+  const { gx, gy } = gradient(gs, w, h);
 
   const jxxSrc = new Float32Array(w * h);
   const jyySrc = new Float32Array(w * h);
@@ -106,8 +118,8 @@ export function extractFlowmap(gray, w, h, opts = {}) {
   const jyy = blurSeparable(jyySrc, w, h, tensorSigma);
   const jxy = blurSeparable(jxySrc, w, h, tensorSigma);
 
-  const vx = new Float32Array(w * h);
-  const vy = new Float32Array(w * h);
+  const ox = new Float32Array(w * h);
+  const oy = new Float32Array(w * h);
   const coherence = new Float32Array(w * h);
 
   for (let i = 0; i < w * h; i++) {
@@ -124,40 +136,107 @@ export function extractFlowmap(gray, w, h, opts = {}) {
       ay = jxy[i];
     }
     const n = Math.hypot(ax, ay) + 1e-12;
-    vx[i] = ax / n;
-    vy[i] = ay / n;
+    ox[i] = ax / n;
+    oy[i] = ay / n;
     coherence[i] = (l1 - l2) / (l1 + l2 + 1e-12);
   }
 
-  // Resolve 180° flip via double-angle smoothing
+  // Smooth orientation in double-angle space (still unsigned)
   let c2 = new Float32Array(w * h);
   let s2 = new Float32Array(w * h);
   const weight = new Float32Array(w * h);
   for (let i = 0; i < w * h; i++) {
-    const ang = Math.atan2(vy[i], vx[i]);
+    const ang = Math.atan2(oy[i], ox[i]);
     const wgt = Math.min(1, Math.max(0.05, coherence[i]));
     weight[i] = wgt;
     c2[i] = Math.cos(2 * ang) * wgt;
     s2[i] = Math.sin(2 * ang) * wgt;
   }
-  for (let pass = 0; pass < 8; pass++) {
-    const c2s = blurSeparable(c2, w, h, 2);
-    const s2s = blurSeparable(s2, w, h, 2);
-    const ws = blurSeparable(weight, w, h, 2);
+  const orientBlur = Math.max(3, tensorSigma * 0.75);
+  for (let pass = 0; pass < 4; pass++) {
+    const c2s = blurSeparable(c2, w, h, orientBlur);
+    const s2s = blurSeparable(s2, w, h, orientBlur);
+    const ws = blurSeparable(weight, w, h, orientBlur);
     for (let i = 0; i < w * h; i++) {
       const den = ws[i] + 1e-8;
       c2[i] = c2s[i] / den;
       s2[i] = s2s[i] / den;
+      const n = Math.hypot(c2[i], s2[i]) + 1e-12;
+      c2[i] /= n;
+      s2[i] /= n;
+      weight[i] = 1;
     }
   }
   for (let i = 0; i < w * h; i++) {
-    const ang2 = 0.5 * Math.atan2(s2[i], c2[i]);
-    const a0 = Math.atan2(vy[i], vx[i]);
-    const d0 = Math.abs(Math.atan2(Math.sin(a0 - ang2), Math.cos(a0 - ang2)));
-    const d1 = Math.abs(Math.atan2(Math.sin(a0 + Math.PI - ang2), Math.cos(a0 + Math.PI - ang2)));
-    if (d1 < d0) {
-      vx[i] = -vx[i];
-      vy[i] = -vy[i];
+    const ang = 0.5 * Math.atan2(s2[i], c2[i]);
+    ox[i] = Math.cos(ang);
+    oy[i] = Math.sin(ang);
+  }
+
+  // --- Continuous guide: isocontour direction of heavily blurred source ---
+  const guide = blurSeparable(norm, w, h, guideSigma);
+  const ggrad = gradient(guide, w, h);
+  const gxG = ggrad.gx;
+  const gyG = ggrad.gy;
+
+  const vx = new Float32Array(w * h);
+  const vy = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    // Rotate gradient 90° → flow along isolines (continuous except at extrema)
+    let gdx = -gyG[i];
+    let gdy = gxG[i];
+    const gn = Math.hypot(gdx, gdy);
+    if (gn < 1e-8) {
+      vx[i] = ox[i];
+      vy[i] = oy[i];
+      continue;
+    }
+    gdx /= gn;
+    gdy /= gn;
+
+    // Pick orientation sign so it agrees with the continuous guide
+    const dot = ox[i] * gdx + oy[i] * gdy;
+    if (dot < 0) {
+      vx[i] = -ox[i];
+      vy[i] = -oy[i];
+    } else {
+      vx[i] = ox[i];
+      vy[i] = oy[i];
+    }
+  }
+
+  // Blend toward guide in low-coherence regions, then blur directed field
+  for (let i = 0; i < w * h; i++) {
+    let gdx = -gyG[i];
+    let gdy = gxG[i];
+    const gn = Math.hypot(gdx, gdy) + 1e-12;
+    gdx /= gn;
+    gdy /= gn;
+    const a = Math.min(1, Math.max(0.15, coherence[i]));
+    let x = vx[i] * a + gdx * (1 - a);
+    let y = vy[i] * a + gdy * (1 - a);
+    const n = Math.hypot(x, y) + 1e-12;
+    vx[i] = x / n;
+    vy[i] = y / n;
+  }
+
+  const vxB = blurSeparable(vx, w, h, vectorSigma);
+  const vyB = blurSeparable(vy, w, h, vectorSigma);
+  for (let i = 0; i < w * h; i++) {
+    const n = Math.hypot(vxB[i], vyB[i]) + 1e-12;
+    vx[i] = vxB[i] / n;
+    vy[i] = vyB[i] / n;
+  }
+
+  // One more neighbor sign polish against local average (removes residual flips)
+  for (let pass = 0; pass < 3; pass++) {
+    const ax = blurSeparable(vx, w, h, 1.5);
+    const ay = blurSeparable(vy, w, h, 1.5);
+    for (let i = 0; i < w * h; i++) {
+      if (vx[i] * ax[i] + vy[i] * ay[i] < 0) {
+        vx[i] = -vx[i];
+        vy[i] = -vy[i];
+      }
     }
   }
 
@@ -165,16 +244,21 @@ export function extractFlowmap(gray, w, h, opts = {}) {
   const mag = new Float32Array(w * h);
   for (let i = 0; i < w * h; i++) {
     const ridge = norm[i];
-    const gm = gradMag[i] / gRef;
-    mag[i] = Math.min(1, Math.max(0, coherence[i] * (0.35 + 0.65 * ridge) * (0.25 + 0.75 * Math.min(1, gm))));
+    const gm = Math.min(1, gradMag[i] / gRef);
+    const guideM = Math.hypot(gxG[i], gyG[i]);
+    mag[i] = Math.min(
+      1,
+      Math.max(0, (0.35 + 0.65 * coherence[i]) * (0.4 + 0.6 * ridge) * (0.35 + 0.65 * gm) * (0.5 + 0.5 * Math.min(1, guideM * 8)))
+    );
   }
+  const magB = blurSeparable(mag, w, h, Math.max(1, vectorSigma));
 
   const fx = new Float32Array(w * h);
   const fy = new Float32Array(w * h);
   const speeds = new Float32Array(w * h);
   for (let i = 0; i < w * h; i++) {
-    fx[i] = vx[i] * mag[i];
-    fy[i] = (invertY ? -vy[i] : vy[i]) * mag[i];
+    fx[i] = vx[i] * magB[i];
+    fy[i] = (invertY ? -vy[i] : vy[i]) * magB[i];
     speeds[i] = Math.hypot(fx[i], fy[i]);
   }
   const peak = percentile(speeds, 99) || 1e-6;
@@ -186,7 +270,7 @@ export function extractFlowmap(gray, w, h, opts = {}) {
     y = Math.min(1, Math.max(-1, y));
     rgba[i * 4] = Math.round((x * 0.5 + 0.5) * 255);
     rgba[i * 4 + 1] = Math.round((y * 0.5 + 0.5) * 255);
-    rgba[i * 4 + 2] = Math.round(mag[i] * 255);
+    rgba[i * 4 + 2] = Math.round(magB[i] * 255);
     rgba[i * 4 + 3] = 255;
   }
   return { rgba, w, h };
