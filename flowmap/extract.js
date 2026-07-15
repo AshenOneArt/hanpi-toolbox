@@ -74,11 +74,98 @@ function percentile(arr, p) {
   return a[i];
 }
 
+/** Soft-blend opposite borders so a non-tileable source becomes more periodic. */
+function makeScalarSeamless(src, w, h, band) {
+  const out = src.slice();
+  const b = Math.max(1, Math.min(band, (Math.min(w, h) / 2) | 0));
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < b; x++) {
+      const t = x / b;
+      const a = 0.5 * (1 - t) * (1 - t);
+      const iL = y * w + x;
+      const iR = y * w + (w - 1 - x);
+      const avg = 0.5 * (src[iL] + src[iR]);
+      out[iL] = src[iL] * (1 - a) + avg * a;
+      out[iR] = src[iR] * (1 - a) + avg * a;
+    }
+  }
+  const tmp = out.slice();
+  for (let x = 0; x < w; x++) {
+    for (let y = 0; y < b; y++) {
+      const t = y / b;
+      const a = 0.5 * (1 - t) * (1 - t);
+      const iT = y * w + x;
+      const iB = (h - 1 - y) * w + x;
+      const avg = 0.5 * (tmp[iT] + tmp[iB]);
+      out[iT] = tmp[iT] * (1 - a) + avg * a;
+      out[iB] = tmp[iB] * (1 - a) + avg * a;
+    }
+  }
+  return out;
+}
+
+/** Align & feather vector field across wrap so tile edges don't hard-cut. */
+function makeVectorSeamless(vx, vy, w, h, band) {
+  const b = Math.max(1, Math.min(band, (Math.min(w, h) / 2) | 0));
+
+  // Flip signs so opposite borders agree, then average
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < b; x++) {
+      const iL = y * w + x;
+      const iR = y * w + (w - 1 - x);
+      if (vx[iL] * vx[iR] + vy[iL] * vy[iR] < 0) {
+        vx[iR] = -vx[iR];
+        vy[iR] = -vy[iR];
+      }
+      const t = x / b;
+      const a = 0.5 * (1 - t);
+      const ax = 0.5 * (vx[iL] + vx[iR]);
+      const ay = 0.5 * (vy[iL] + vy[iR]);
+      const n = Math.hypot(ax, ay) + 1e-12;
+      const mx = ax / n;
+      const my = ay / n;
+      vx[iL] = vx[iL] * (1 - a) + mx * a;
+      vy[iL] = vy[iL] * (1 - a) + my * a;
+      vx[iR] = vx[iR] * (1 - a) + mx * a;
+      vy[iR] = vy[iR] * (1 - a) + my * a;
+      const nL = Math.hypot(vx[iL], vy[iL]) + 1e-12;
+      const nR = Math.hypot(vx[iR], vy[iR]) + 1e-12;
+      vx[iL] /= nL; vy[iL] /= nL;
+      vx[iR] /= nR; vy[iR] /= nR;
+    }
+  }
+  for (let x = 0; x < w; x++) {
+    for (let y = 0; y < b; y++) {
+      const iT = y * w + x;
+      const iB = (h - 1 - y) * w + x;
+      if (vx[iT] * vx[iB] + vy[iT] * vy[iB] < 0) {
+        vx[iB] = -vx[iB];
+        vy[iB] = -vy[iB];
+      }
+      const t = y / b;
+      const a = 0.5 * (1 - t);
+      const ax = 0.5 * (vx[iT] + vx[iB]);
+      const ay = 0.5 * (vy[iT] + vy[iB]);
+      const n = Math.hypot(ax, ay) + 1e-12;
+      const mx = ax / n;
+      const my = ay / n;
+      vx[iT] = vx[iT] * (1 - a) + mx * a;
+      vy[iT] = vy[iT] * (1 - a) + my * a;
+      vx[iB] = vx[iB] * (1 - a) + mx * a;
+      vy[iB] = vy[iB] * (1 - a) + my * a;
+      const nT = Math.hypot(vx[iT], vy[iT]) + 1e-12;
+      const nB = Math.hypot(vx[iB], vy[iB]) + 1e-12;
+      vx[iT] /= nT; vy[iT] /= nT;
+      vx[iB] /= nB; vy[iB] /= nB;
+    }
+  }
+}
+
 /**
  * @param {Float32Array} gray 0..1
  * @param {number} w
  * @param {number} h
- * @param {{gradSigma?: number, tensorSigma?: number, guideSigma?: number, vectorSigma?: number, invertY?: boolean}} opts
+ * @param {{gradSigma?: number, tensorSigma?: number, guideSigma?: number, vectorSigma?: number, invertY?: boolean, seamless?: boolean, seamBand?: number}} opts
  */
 export function extractFlowmap(gray, w, h, opts = {}) {
   const gradSigma = opts.gradSigma ?? 1.0;
@@ -88,6 +175,8 @@ export function extractFlowmap(gray, w, h, opts = {}) {
   // Soften directed vectors after sign alignment
   const vectorSigma = opts.vectorSigma ?? Math.max(2, tensorSigma * 0.35);
   const invertY = opts.invertY ?? true;
+  const seamless = opts.seamless ?? true;
+  const seamBand = opts.seamBand ?? Math.max(8, Math.round(Math.min(w, h) * 0.04));
 
   let gmin = Infinity;
   let gmax = -Infinity;
@@ -96,8 +185,13 @@ export function extractFlowmap(gray, w, h, opts = {}) {
     if (gray[i] > gmax) gmax = gray[i];
   }
   const span = Math.max(gmax - gmin, 1e-8);
-  const norm = new Float32Array(gray.length);
+  let norm = new Float32Array(gray.length);
   for (let i = 0; i < gray.length; i++) norm[i] = (gray[i] - gmin) / span;
+  if (seamless) {
+    norm = makeScalarSeamless(norm, w, h, seamBand);
+    // Extra wrap blur so derivatives at borders match
+    norm = blurSeparable(norm, w, h, Math.max(1, seamBand * 0.15));
+  }
 
   // --- Local orientation via structure tensor (unsigned) ---
   const gs = blurSeparable(norm, w, h, gradSigma);
@@ -237,6 +331,17 @@ export function extractFlowmap(gray, w, h, opts = {}) {
         vx[i] = -vx[i];
         vy[i] = -vy[i];
       }
+    }
+  }
+
+  if (seamless) {
+    makeVectorSeamless(vx, vy, w, h, seamBand);
+    const vxS = blurSeparable(vx, w, h, Math.max(1.5, seamBand * 0.12));
+    const vyS = blurSeparable(vy, w, h, Math.max(1.5, seamBand * 0.12));
+    for (let i = 0; i < w * h; i++) {
+      const n = Math.hypot(vxS[i], vyS[i]) + 1e-12;
+      vx[i] = vxS[i] / n;
+      vy[i] = vyS[i] / n;
     }
   }
 

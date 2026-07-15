@@ -209,6 +209,11 @@
         <input type="range" id="tensorSigma" min="1" max="16" step="0.5" value="6" />
         <label class="row">连续引导 σ <span class="v" id="vGuide">16.0</span></label>
         <input type="range" id="guideSigma" min="4" max="48" step="1" value="16" />
+        <label class="row">边界软化 <span class="v" id="vSeam">32</span></label>
+        <input type="range" id="seamBand" min="4" max="96" step="1" value="32" />
+        <div class="checks">
+          <label><input type="checkbox" id="seamless" checked /> 无缝平铺（消四边硬切）</label>
+        </div>
         <div class="btn-row">
           <button type="button" class="action" id="btnGenerate">生成</button>
           <button type="button" class="action secondary" id="btnDownload" disabled>下载 Flowmap</button>
@@ -231,13 +236,14 @@
         <label class="row">乒乓锐度 <span class="v" id="vBlend">2.0</span></label>
         <input type="range" id="blendSharp" min="0.5" max="4" step="0.1" value="2" />
         <label><input type="checkbox" id="showFlow" /> 显示 Flowmap</label>
+        <label><input type="checkbox" id="tilePreview" /> 2×2 平铺预览（查接缝）</label>
         <label><input type="checkbox" id="invertY" /> 翻转 Flow Y</label>
       </div>
 
       <p class="hint">
         <strong>双图预览</strong>：自己导入源图 + flowmap。<br />
-        <strong>单图生成</strong>：结构张量估取向，再用大尺度梯度引导消掉 180° 翻转；编码 <code>RG = 0.5+0.5·dir</code>。<br />
-        Tensor 只影响细节平滑；「连续引导 σ」才管大块品红/绿对切。全部本地处理。
+        <strong>单图生成</strong>：结构张量 + 连续引导；开「无缝平铺」对齐四边矢量。<br />
+        RG 颜色急转看起来“硬”不一定是接缝——用 2×2 平铺预览区分。编码 <code>RG = 0.5+0.5·dir</code>。
       </p>
     </aside>
     <div class="stage">
@@ -276,16 +282,20 @@
       uniform float uPingPong;
       uniform float uInvertY;
       uniform float uBlendSharp;
+      uniform float uTilePreview;
 
       void main() {
+        vec2 uv = vUv;
+        if (uTilePreview > 0.5) uv = fract(vUv * 2.0);
+
         if (uHasFlow < 0.5 && uHasSrc < 0.5) {
-          vec2 g = floor(vUv * 16.0);
+          vec2 g = floor(uv * 16.0);
           float c = mod(g.x + g.y, 2.0) > 0.5 ? 0.18 : 0.12;
           gl_FragColor = vec4(vec3(c), 1.0);
           return;
         }
         if (uShowFlow > 0.5 && uHasFlow > 0.5) {
-          gl_FragColor = vec4(texture2D(uFlow, vUv).rgb, 1.0);
+          gl_FragColor = vec4(texture2D(uFlow, uv).rgb, 1.0);
           return;
         }
         if (uHasSrc < 0.5) {
@@ -293,31 +303,28 @@
           return;
         }
         if (uHasFlow < 0.5) {
-          gl_FragColor = texture2D(uSrc, vUv);
+          gl_FragColor = texture2D(uSrc, uv);
           return;
         }
-        vec2 flow = texture2D(uFlow, vUv).rg * 2.0 - 1.0;
+        vec2 flow = texture2D(uFlow, uv).rg * 2.0 - 1.0;
         if (uInvertY > 0.5) flow.y = -flow.y;
 
         // Single layer: continuous drift (visible jump if time wraps)
         if (uPingPong < 0.5) {
-          gl_FragColor = texture2D(uSrc, vUv - flow * uStrength * uTime);
+          gl_FragColor = texture2D(uSrc, uv - flow * uStrength * uTime);
           return;
         }
 
         // Catlike-style dual layer: centered offset + per-layer weight
-        // Weight is 0 at wrap (hide the resetting layer), 1 at mid-cycle.
         float t0 = fract(uTime);
         float t1 = fract(uTime + 0.5);
         float w0 = 1.0 - abs(2.0 * t0 - 1.0);
         float w1 = 1.0 - abs(2.0 * t1 - 1.0);
-        // Sharpen weights → less dual-ghosting, tighter handoff at wrap
         float sharp = max(uBlendSharp, 0.5);
         w0 = pow(max(w0, 0.0), sharp);
         w1 = pow(max(w1, 0.0), sharp);
-        // Centered in [-0.5,0.5] so mean UV stays put (less swimming)
-        vec2 uv0 = vUv - flow * uStrength * (t0 - 0.5);
-        vec2 uv1 = vUv - flow * uStrength * (t1 - 0.5);
+        vec2 uv0 = uv - flow * uStrength * (t0 - 0.5);
+        vec2 uv1 = uv - flow * uStrength * (t1 - 0.5);
         vec4 c0 = texture2D(uSrc, uv0);
         vec4 c1 = texture2D(uSrc, uv1);
         gl_FragColor = (c0 * w0 + c1 * w1) / max(w0 + w1, 1e-4);
@@ -356,6 +363,7 @@
       uPingPong: gl.getUniformLocation(prog, "uPingPong"),
       uInvertY: gl.getUniformLocation(prog, "uInvertY"),
       uBlendSharp: gl.getUniformLocation(prog, "uBlendSharp"),
+      uTilePreview: gl.getUniformLocation(prog, "uTilePreview"),
     };
 
     function makeTex() {
@@ -480,10 +488,13 @@
     const elTime = document.getElementById("time");
     const elTensor = document.getElementById("tensorSigma");
     const elGuide = document.getElementById("guideSigma");
+    const elSeam = document.getElementById("seamBand");
+    const elSeamless = document.getElementById("seamless");
     const elPlay = document.getElementById("play");
     const elPing = document.getElementById("pingpong");
     const elBlend = document.getElementById("blendSharp");
     const elShowFlow = document.getElementById("showFlow");
+    const elTile = document.getElementById("tilePreview");
     const elInvertY = document.getElementById("invertY");
     const genStatus = document.getElementById("genStatus");
     const btnGenerate = document.getElementById("btnGenerate");
@@ -495,9 +506,10 @@
       document.getElementById("vTime").textContent = Number(elTime.value).toFixed(2);
       document.getElementById("vTensor").textContent = Number(elTensor.value).toFixed(1);
       document.getElementById("vGuide").textContent = Number(elGuide.value).toFixed(1);
+      document.getElementById("vSeam").textContent = String(Math.round(Number(elSeam.value)));
       document.getElementById("vBlend").textContent = Number(elBlend.value).toFixed(1);
     }
-    [elStrength, elSpeed, elTime, elTensor, elGuide, elBlend].forEach((el) => el.addEventListener("input", syncLabels));
+    [elStrength, elSpeed, elTime, elTensor, elGuide, elSeam, elBlend].forEach((el) => el.addEventListener("input", syncLabels));
     syncLabels();
     elTime.addEventListener("input", () => { state.time = Number(elTime.value); });
 
@@ -519,6 +531,8 @@
           tensorSigma: Number(elTensor.value),
           guideSigma: Number(elGuide.value),
           invertY: true,
+          seamless: elSeamless.checked,
+          seamBand: Number(elSeam.value),
         });
         const flowCanvas = rgbaToImageBitmap(rgba, w, h);
         state.flowCanvas = flowCanvas;
@@ -571,6 +585,7 @@
       gl.uniform1f(loc.uPingPong, elPing.checked ? 1 : 0);
       gl.uniform1f(loc.uInvertY, elInvertY.checked ? 1 : 0);
       gl.uniform1f(loc.uBlendSharp, Number(elBlend.value));
+      gl.uniform1f(loc.uTilePreview, elTile.checked ? 1 : 0);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       requestAnimationFrame(frame);
     }
