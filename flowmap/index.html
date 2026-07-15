@@ -299,7 +299,12 @@
           gl_FragColor = vec4(texture2D(uFlow, fract(uv)).rgb, 1.0);
           return;
         }
+        // Only flowmap loaded (common when checking a downloaded RG map)
         if (uHasSrc < 0.5) {
+          if (uHasFlow > 0.5) {
+            gl_FragColor = vec4(texture2D(uFlow, fract(uv)).rgb, 1.0);
+            return;
+          }
           gl_FragColor = vec4(0.1, 0.12, 0.11, 1.0);
           return;
         }
@@ -394,24 +399,27 @@
       flowName: "flowmap.png",
     };
 
-    /** Draw through canvas: fixes NPOT/alpha-black PNGs and odd color profiles. */
+    /** Draw through canvas: even size + opaque composite (avoids NPOT/alpha black). */
     function toUploadCanvas(img) {
-      const w = Math.max(1, img.width | 0);
-      const h = Math.max(1, img.height | 0);
+      let w = Math.max(1, img.width | 0);
+      let h = Math.max(1, img.height | 0);
+      // Even dimensions avoid rare UNPACK_ALIGNMENT edge cases (e.g. 1023 wide)
+      if (w % 2) w += 1;
+      if (h % 2) h += 1;
       const c = document.createElement("canvas");
       c.width = w;
       c.height = h;
-      const ctx = c.getContext("2d", { alpha: true });
-      // Many cutout PNGs store RGB=0 with alpha mask → would look pure black
+      const ctx = c.getContext("2d", { alpha: false });
       ctx.fillStyle = "#808080";
       ctx.fillRect(0, 0, w, h);
-      ctx.drawImage(img, 0, 0, w, h);
+      ctx.drawImage(img, 0, 0, img.width, img.height);
       return c;
     }
 
     function upload(tex, img) {
       const src = toUploadCanvas(img);
       gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
       gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 0);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
@@ -419,6 +427,8 @@
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      const err = gl.getError();
+      if (err) console.warn("tex upload GL error", err, src.width, src.height);
     }
 
     function fitCanvas(img) {
@@ -430,8 +440,10 @@
         w = Math.round(w * s);
         h = Math.round(h * s);
       }
-      canvas.width = w;
-      canvas.height = h;
+      if (w % 2) w += 1;
+      if (h % 2) h += 1;
+      canvas.width = Math.max(2, w);
+      canvas.height = Math.max(2, h);
     }
 
     function loadImageFile(file) {
@@ -457,16 +469,21 @@
       } else if (kind === "flow") {
         upload(texFlow, img);
         state.hasFlow = true;
-        if (!state.hasSrc) fitCanvas(img);
+        if (!state.hasSrc) {
+          fitCanvas(img);
+          // No source yet — show the flowmap itself instead of a black/empty stage
+          document.getElementById("showFlow").checked = true;
+        }
         document.getElementById("nameFlow").textContent = file.name;
       } else if (kind === "gen") {
         state.genImage = img;
         state.flowName = file.name.replace(/\.[^.]+$/, "") + "_flowmap.png";
         document.getElementById("nameGen").textContent = file.name;
-        document.getElementById("genStatus").textContent = "已载入，点击「生成」";
+        document.getElementById("genStatus").textContent = `已载入 ${img.width}×${img.height}，点击「生成」`;
         document.getElementById("genStatus").classList.remove("busy");
         upload(texSrc, img);
         state.hasSrc = true;
+        // Keep previous flow if any; preview source until user generates
         fitCanvas(img);
       }
     }
