@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Flowmap · HanPi 百宝箱</title>
+  <title>Flowmap 生成 · HanPi 百宝箱</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -177,32 +177,19 @@
 <body>
   <header>
     <a href="../">← HanPi 百宝箱</a>
-    <h1>Flowmap <span>工具</span></h1>
+    <h1>Flowmap <span>生成</span></h1>
   </header>
   <div class="layout">
     <aside>
       <div class="tabs">
-        <button type="button" class="active" data-mode="preview">双图预览</button>
-        <button type="button" data-mode="generate">单图生成</button>
+        <button type="button" class="active" data-mode="generate">单图生成</button>
+        <button type="button" data-mode="preview">双图预览</button>
       </div>
 
-      <div class="panel active" id="panelPreview">
-        <div class="drop" id="dropSrc" data-kind="src">
-          <div class="label">SOURCE</div>
-          <div class="name" id="nameSrc">拖入源纹理</div>
-          <input type="file" accept="image/*" />
-        </div>
-        <div class="drop" id="dropFlow" data-kind="flow">
-          <div class="label">FLOWMAP (RG)</div>
-          <div class="name" id="nameFlow">拖入 flowmap</div>
-          <input type="file" accept="image/*" />
-        </div>
-      </div>
-
-      <div class="panel" id="panelGenerate">
+      <div class="panel active" id="panelGenerate">
         <div class="drop" id="dropGen" data-kind="gen">
           <div class="label">SOURCE → FLOWMAP</div>
-          <div class="name" id="nameGen">拖入一张纹理，生成 flowmap</div>
+          <div class="name" id="nameGen">拖入一张纹理，一键生成 flowmap</div>
           <input type="file" accept="image/*" />
         </div>
         <label class="row">Tensor σ <span class="v" id="vTensor">16.0</span></label>
@@ -219,6 +206,19 @@
           <button type="button" class="action secondary" id="btnDownload" disabled>下载 Flowmap</button>
         </div>
         <div class="status" id="genStatus"></div>
+      </div>
+
+      <div class="panel" id="panelPreview">
+        <div class="drop" id="dropSrc" data-kind="src">
+          <div class="label">SOURCE</div>
+          <div class="name" id="nameSrc">拖入源纹理</div>
+          <input type="file" accept="image/*" />
+        </div>
+        <div class="drop" id="dropFlow" data-kind="flow">
+          <div class="label">FLOWMAP (RG)</div>
+          <div class="name" id="nameFlow">拖入已有 flowmap</div>
+          <input type="file" accept="image/*" />
+        </div>
       </div>
 
       <label class="row">Strength <span class="v" id="vStrength">0.080</span></label>
@@ -241,9 +241,9 @@
       </div>
 
       <p class="hint">
-        <strong>双图预览</strong>：自己导入源图 + flowmap。<br />
-        <strong>单图生成</strong>：结构张量 + 连续引导；开「无缝平铺」对齐四边矢量。<br />
-        RG 颜色急转看起来“硬”不一定是接缝——用 2×2 平铺预览区分。编码 <code>RG = 0.5+0.5·dir</code>。
+        <strong>单图生成（主功能）</strong>：从一张纹理估流动方向，生成 Unity 兼容 Flowmap（<code>RG = 0.5+0.5·dir</code>），并实时预览扭曲；可下载。<br />
+        <strong>双图预览（附加）</strong>：已有源图 + Flowmap 时，直接导入查看效果。<br />
+        「无缝平铺」对齐四边；2×2 预览查接缝。RG 色块急转不一定是接缝问题。
       </p>
     </aside>
     <div class="stage">
