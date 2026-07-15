@@ -1,6 +1,6 @@
 # HanPi 百宝箱
 
-纹理生成、预览、效果、AI 构建小工具（GitHub Pages 静态站点）。
+AI搭建 · 纹理生成、预览、效果小工具（GitHub Pages 静态站点）。
 
 **入口首页 → [https://ashenoneart.github.io/hanpi-toolbox/](https://ashenoneart.github.io/hanpi-toolbox/)**
 
