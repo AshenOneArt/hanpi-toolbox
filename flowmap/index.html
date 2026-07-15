@@ -510,19 +510,32 @@
     wireDrop(document.getElementById("dropFlow"));
     wireDrop(document.getElementById("dropGen"));
 
-    const SAMPLE_URL = new URL("./examples/sample-source.png", import.meta.url).href;
+    /** Resolve sample URL even when page is /flowmap (no trailing slash). */
+    function sampleUrl() {
+      const u = new URL(window.location.href);
+      let path = u.pathname;
+      if (path.endsWith("index.html")) path = path.slice(0, -"index.html".length);
+      if (!path.endsWith("/")) path += "/";
+      return `${u.origin}${path}examples/sample-source.png`;
+    }
 
     async function loadSampleImage() {
       const genStatus = document.getElementById("genStatus");
+      const url = sampleUrl();
       try {
         genStatus.classList.add("busy");
         genStatus.textContent = "加载示例图…";
+        const res = await fetch(url, { cache: "force-cache" });
+        if (!res.ok) throw new Error(`示例图 ${res.status}: ${url}`);
+        const blob = await res.blob();
+        const objUrl = URL.createObjectURL(blob);
         const img = await new Promise((resolve, reject) => {
           const im = new Image();
           im.onload = () => resolve(im);
-          im.onerror = () => reject(new Error("示例图加载失败"));
-          im.src = SAMPLE_URL;
+          im.onerror = () => reject(new Error("示例图解码失败"));
+          im.src = objUrl;
         });
+        URL.revokeObjectURL(objUrl);
         state.genImage = img;
         state.flowName = "sample-source_flowmap.png";
         document.getElementById("nameGen").textContent = "examples/sample-source.png";
@@ -532,14 +545,13 @@
         genStatus.classList.remove("busy");
         genStatus.textContent = `示例已载入 ${img.width}×${img.height}，点击「生成」`;
       } catch (err) {
-        console.error(err);
+        console.error(err, url);
         genStatus.classList.remove("busy");
         genStatus.textContent = err?.message || "示例加载失败";
       }
     }
 
     document.getElementById("btnSample").addEventListener("click", loadSampleImage);
-    // Demo-ready: load bundled sample on open
     loadSampleImage();
 
     // Mode tabs
