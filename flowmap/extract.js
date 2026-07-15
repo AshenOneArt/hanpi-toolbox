@@ -389,10 +389,15 @@ export function imageToGray(img, maxSize = 1024) {
     w = Math.round(w * s);
     h = Math.round(h * s);
   }
+  w = Math.max(1, w | 0);
+  h = Math.max(1, h | 0);
   const c = document.createElement("canvas");
   c.width = w;
   c.height = h;
   const ctx = c.getContext("2d", { willReadFrequently: true });
+  // Composite over mid-gray so transparent / black-RGB+alpha cutouts keep detail
+  ctx.fillStyle = "#808080";
+  ctx.fillRect(0, 0, w, h);
   ctx.drawImage(img, 0, 0, w, h);
   const data = ctx.getImageData(0, 0, w, h).data;
   const gray = new Float32Array(w * h);

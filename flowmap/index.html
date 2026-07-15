@@ -294,8 +294,9 @@
           gl_FragColor = vec4(vec3(c), 1.0);
           return;
         }
+        // fract wrap in shader — WebGL1 NPOT + REPEAT often samples pure black
         if (uShowFlow > 0.5 && uHasFlow > 0.5) {
-          gl_FragColor = vec4(texture2D(uFlow, uv).rgb, 1.0);
+          gl_FragColor = vec4(texture2D(uFlow, fract(uv)).rgb, 1.0);
           return;
         }
         if (uHasSrc < 0.5) {
@@ -303,15 +304,15 @@
           return;
         }
         if (uHasFlow < 0.5) {
-          gl_FragColor = texture2D(uSrc, uv);
+          gl_FragColor = texture2D(uSrc, fract(uv));
           return;
         }
-        vec2 flow = texture2D(uFlow, uv).rg * 2.0 - 1.0;
+        vec2 flow = texture2D(uFlow, fract(uv)).rg * 2.0 - 1.0;
         if (uInvertY > 0.5) flow.y = -flow.y;
 
         // Single layer: continuous drift (visible jump if time wraps)
         if (uPingPong < 0.5) {
-          gl_FragColor = texture2D(uSrc, uv - flow * uStrength * uTime);
+          gl_FragColor = texture2D(uSrc, fract(uv - flow * uStrength * uTime));
           return;
         }
 
@@ -323,8 +324,8 @@
         float sharp = max(uBlendSharp, 0.5);
         w0 = pow(max(w0, 0.0), sharp);
         w1 = pow(max(w1, 0.0), sharp);
-        vec2 uv0 = uv - flow * uStrength * (t0 - 0.5);
-        vec2 uv1 = uv - flow * uStrength * (t1 - 0.5);
+        vec2 uv0 = fract(uv - flow * uStrength * (t0 - 0.5));
+        vec2 uv1 = fract(uv - flow * uStrength * (t1 - 0.5));
         vec4 c0 = texture2D(uSrc, uv0);
         vec4 c1 = texture2D(uSrc, uv1);
         gl_FragColor = (c0 * w0 + c1 * w1) / max(w0 + w1, 1e-4);
@@ -371,9 +372,10 @@
       gl.bindTexture(gl.TEXTURE_2D, t);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 255]));
+      // CLAMP required for non-power-of-two in WebGL1; wrapping done via fract() in shader
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([40, 40, 40, 255]));
       return t;
     }
 
@@ -392,10 +394,31 @@
       flowName: "flowmap.png",
     };
 
+    /** Draw through canvas: fixes NPOT/alpha-black PNGs and odd color profiles. */
+    function toUploadCanvas(img) {
+      const w = Math.max(1, img.width | 0);
+      const h = Math.max(1, img.height | 0);
+      const c = document.createElement("canvas");
+      c.width = w;
+      c.height = h;
+      const ctx = c.getContext("2d", { alpha: true });
+      // Many cutout PNGs store RGB=0 with alpha mask → would look pure black
+      ctx.fillStyle = "#808080";
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+      return c;
+    }
+
     function upload(tex, img) {
+      const src = toUploadCanvas(img);
       gl.bindTexture(gl.TEXTURE_2D, tex);
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 0);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     }
 
     function fitCanvas(img) {
