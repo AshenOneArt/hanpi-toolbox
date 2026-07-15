@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HanPi 百宝箱</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0e1210;
+      --panel: #171c19;
+      --line: #2a332e;
+      --text: #e8efe9;
+      --muted: #8a9a90;
+      --accent: #3dcf8e;
+      --accent-dim: #1f6b49;
+      --warn: #e6b35a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "DM Sans", system-ui, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(900px 500px at 10% -10%, #1a3d2c 0%, transparent 55%),
+        radial-gradient(700px 400px at 100% 0%, #243028 0%, transparent 50%),
+        var(--bg);
+    }
+    main {
+      max-width: 880px;
+      margin: 0 auto;
+      padding: 48px 24px 80px;
+    }
+    .brand {
+      font-size: clamp(2.4rem, 6vw, 3.6rem);
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      margin: 0 0 8px;
+    }
+    .brand span { color: var(--accent); }
+    .lead {
+      color: var(--muted);
+      font-size: 1.05rem;
+      margin: 0 0 36px;
+      max-width: 36em;
+      line-height: 1.5;
+    }
+    .grid {
+      display: grid;
+      gap: 14px;
+    }
+    a.card {
+      display: block;
+      text-decoration: none;
+      color: inherit;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 20px 22px;
+      transition: border-color .15s, transform .15s;
+    }
+    a.card:hover {
+      border-color: var(--accent-dim);
+      transform: translateY(-1px);
+    }
+    a.card h2 {
+      margin: 0 0 6px;
+      font-size: 1.15rem;
+    }
+    a.card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.45;
+    }
+    .tag {
+      display: inline-block;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.72rem;
+      color: var(--accent);
+      background: rgba(61, 207, 142, 0.12);
+      border: 1px solid rgba(61, 207, 142, 0.25);
+      border-radius: 6px;
+      padding: 2px 8px;
+      margin-bottom: 10px;
+    }
+    footer {
+      margin-top: 48px;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1 class="brand">HanPi <span>百宝箱</span></h1>
+    <p class="lead">跟工程无关的 GPU / 贴图调试小工具。贴图只在浏览器本地处理，不上传服务器。</p>
+    <div class="grid">
+      <a class="card" href="flowmap/">
+        <div class="tag">WebGL</div>
+        <h2>Flowmap Viewer</h2>
+        <p>拖入原图 + Flowmap，实时看 UV 扭曲与方向场。编码与 Unity 一致：RG = 0.5 + 0.5·dir。</p>
+      </a>
+    </div>
+    <footer>AshenOneArt · 纯静态 GitHub Pages</footer>
+  </main>
+</body>
+</html>

@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Flowmap Viewer · HanPi 百宝箱</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0e1210;
+      --panel: #171c19;
+      --panel2: #1d2420;
+      --line: #2a332e;
+      --text: #e8efe9;
+      --muted: #8a9a90;
+      --accent: #3dcf8e;
+      --accent-dim: #1f6b49;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "DM Sans", system-ui, sans-serif;
+      color: var(--text);
+      background: var(--bg);
+    }
+    header {
+      display: flex;
+      align-items: baseline;
+      gap: 14px;
+      flex-wrap: wrap;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+    }
+    header a {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 0.9rem;
+    }
+    header a:hover { color: var(--accent); }
+    header h1 {
+      margin: 0;
+      font-size: 1.15rem;
+      font-weight: 700;
+    }
+    header h1 span { color: var(--accent); }
+    .layout {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      min-height: calc(100vh - 57px);
+    }
+    @media (max-width: 860px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+    aside {
+      border-right: 1px solid var(--line);
+      background: var(--panel);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .drop {
+      border: 1px dashed var(--line);
+      border-radius: 10px;
+      padding: 14px;
+      background: var(--panel2);
+      cursor: pointer;
+      transition: border-color .15s;
+    }
+    .drop:hover, .drop.drag { border-color: var(--accent-dim); }
+    .drop .label {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-bottom: 4px;
+      font-family: "JetBrains Mono", monospace;
+    }
+    .drop .name {
+      font-size: 0.92rem;
+      word-break: break-all;
+    }
+    .drop input { display: none; }
+    label.row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.88rem;
+      color: var(--muted);
+    }
+    label.row span.v {
+      font-family: "JetBrains Mono", monospace;
+      color: var(--text);
+      min-width: 3.2em;
+      text-align: right;
+    }
+    input[type="range"] { width: 100%; accent-color: var(--accent); }
+    .checks {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 0.9rem;
+    }
+    .checks label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+    .hint {
+      font-size: 0.8rem;
+      color: var(--muted);
+      line-height: 1.45;
+      margin-top: auto;
+    }
+    .hint code {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.76rem;
+      color: var(--accent);
+    }
+    .stage {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      background:
+        linear-gradient(45deg, #141916 25%, transparent 25%),
+        linear-gradient(-45deg, #141916 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #141916 75%),
+        linear-gradient(-45deg, transparent 75%, #141916 75%);
+      background-size: 24px 24px;
+      background-position: 0 0, 0 12px, 12px -12px, -12px 0;
+      background-color: #101411;
+    }
+    canvas#gl {
+      max-width: 100%;
+      max-height: calc(100vh - 100px);
+      width: auto;
+      height: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #000;
+      image-rendering: auto;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="../">← HanPi 百宝箱</a>
+    <h1>Flowmap <span>Viewer</span></h1>
+  </header>
+  <div class="layout">
+    <aside>
+      <div class="drop" id="dropSrc" data-kind="src">
+        <div class="label">SOURCE</div>
+        <div class="name" id="nameSrc">拖入原图，或点击选择</div>
+        <input type="file" accept="image/*" />
+      </div>
+      <div class="drop" id="dropFlow" data-kind="flow">
+        <div class="label">FLOWMAP (RG)</div>
+        <div class="name" id="nameFlow">拖入 flowmap，或点击选择</div>
+        <input type="file" accept="image/*" />
+      </div>
+
+      <label class="row">Strength <span class="v" id="vStrength">0.04</span></label>
+      <input type="range" id="strength" min="0" max="0.25" step="0.001" value="0.04" />
+
+      <label class="row">Speed <span class="v" id="vSpeed">0.35</span></label>
+      <input type="range" id="speed" min="0" max="2" step="0.01" value="0.35" />
+
+      <label class="row">Time (manual) <span class="v" id="vTime">0.00</span></label>
+      <input type="range" id="time" min="0" max="10" step="0.01" value="0" />
+
+      <div class="checks">
+        <label><input type="checkbox" id="play" checked /> 自动播放</label>
+        <label><input type="checkbox" id="pingpong" checked /> Ping-pong（双采样混合）</label>
+        <label><input type="checkbox" id="showFlow" /> 显示 Flowmap 本身</label>
+        <label><input type="checkbox" id="invertY" /> 翻转 Flow Y（排查轴向）</label>
+      </div>
+
+      <p class="hint">
+        Unity / HDRP 常见解码：<br />
+        <code>flow = tex.rg * 2 - 1</code><br />
+        贴图仅在本地 GPU 采样，不会上传。
+      </p>
+    </aside>
+    <div class="stage">
+      <canvas id="gl" width="1024" height="1024"></canvas>
+    </div>
+  </div>
+
+  <script type="module">
+    const canvas = document.getElementById("gl");
+    const gl = canvas.getContext("webgl", { alpha: false, premultipliedAlpha: false });
+    if (!gl) {
+      alert("当前浏览器不支持 WebGL");
+      throw new Error("no webgl");
+    }
+
+    const vs = `
+      attribute vec2 aPos;
+      varying vec2 vUv;
+      void main() {
+        vUv = aPos * 0.5 + 0.5;
+        gl_Position = vec4(aPos, 0.0, 1.0);
+      }
+    `;
+
+    const fs = `
+      precision mediump float;
+      varying vec2 vUv;
+      uniform sampler2D uSrc;
+      uniform sampler2D uFlow;
+      uniform float uStrength;
+      uniform float uTime;
+      uniform float uHasSrc;
+      uniform float uHasFlow;
+      uniform float uShowFlow;
+      uniform float uPingPong;
+      uniform float uInvertY;
+
+      void main() {
+        if (uHasFlow < 0.5 && uHasSrc < 0.5) {
+          vec2 g = floor(vUv * 16.0);
+          float c = mod(g.x + g.y, 2.0) > 0.5 ? 0.18 : 0.12;
+          gl_FragColor = vec4(vec3(c), 1.0);
+          return;
+        }
+        if (uShowFlow > 0.5 && uHasFlow > 0.5) {
+          gl_FragColor = vec4(texture2D(uFlow, vUv).rgb, 1.0);
+          return;
+        }
+        if (uHasSrc < 0.5) {
+          gl_FragColor = vec4(0.1, 0.12, 0.11, 1.0);
+          return;
+        }
+        if (uHasFlow < 0.5) {
+          gl_FragColor = texture2D(uSrc, vUv);
+          return;
+        }
+
+        vec2 flow = texture2D(uFlow, vUv).rg * 2.0 - 1.0;
+        if (uInvertY > 0.5) flow.y = -flow.y;
+
+        float phase = fract(uTime);
+        vec2 o0 = flow * uStrength * phase;
+        vec2 o1 = flow * uStrength * (phase - 1.0);
+
+        vec4 c0 = texture2D(uSrc, vUv + o0);
+        if (uPingPong < 0.5) {
+          gl_FragColor = c0;
+          return;
+        }
+        vec4 c1 = texture2D(uSrc, vUv + o1);
+        float w = abs(phase * 2.0 - 1.0);
+        gl_FragColor = mix(c0, c1, w);
+      }
+    `;
+
+    function compile(type, src) {
+      const s = gl.createShader(type);
+      gl.shaderSource(s, src);
+      gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+        throw new Error(gl.getShaderInfoLog(s));
+      }
+      return s;
+    }
+
+    const prog = gl.createProgram();
+    gl.attachShader(prog, compile(gl.VERTEX_SHADER, vs));
+    gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, fs));
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+      throw new Error(gl.getProgramInfoLog(prog));
+    }
+    gl.useProgram(prog);
+
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+    const aPos = gl.getAttribLocation(prog, "aPos");
+    gl.enableVertexAttribArray(aPos);
+    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+    const loc = {
+      uSrc: gl.getUniformLocation(prog, "uSrc"),
+      uFlow: gl.getUniformLocation(prog, "uFlow"),
+      uStrength: gl.getUniformLocation(prog, "uStrength"),
+      uTime: gl.getUniformLocation(prog, "uTime"),
+      uHasSrc: gl.getUniformLocation(prog, "uHasSrc"),
+      uHasFlow: gl.getUniformLocation(prog, "uHasFlow"),
+      uShowFlow: gl.getUniformLocation(prog, "uShowFlow"),
+      uPingPong: gl.getUniformLocation(prog, "uPingPong"),
+      uInvertY: gl.getUniformLocation(prog, "uInvertY"),
+    };
+
+    function makeTex() {
+      const t = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 255]));
+      return t;
+    }
+
+    const texSrc = makeTex();
+    const texFlow = makeTex();
+    gl.uniform1i(loc.uSrc, 0);
+    gl.uniform1i(loc.uFlow, 1);
+
+    const state = {
+      hasSrc: false,
+      hasFlow: false,
+      time: 0,
+      last: performance.now(),
+    };
+
+    function upload(tex, img) {
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+    }
+
+    function fitCanvas(img) {
+      const max = 1024;
+      let w = img.width;
+      let h = img.height;
+      if (w > max || h > max) {
+        const s = max / Math.max(w, h);
+        w = Math.round(w * s);
+        h = Math.round(h * s);
+      }
+      canvas.width = w;
+      canvas.height = h;
+    }
+
+    function loadFile(file, kind) {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        if (kind === "src") {
+          upload(texSrc, img);
+          state.hasSrc = true;
+          fitCanvas(img);
+          document.getElementById("nameSrc").textContent = file.name;
+        } else {
+          upload(texFlow, img);
+          state.hasFlow = true;
+          if (!state.hasSrc) fitCanvas(img);
+          document.getElementById("nameFlow").textContent = file.name;
+        }
+        URL.revokeObjectURL(url);
+      };
+      img.src = url;
+    }
+
+    function wireDrop(el) {
+      const input = el.querySelector("input");
+      const kind = el.dataset.kind;
+      el.addEventListener("click", () => input.click());
+      el.addEventListener("dragover", (e) => { e.preventDefault(); el.classList.add("drag"); });
+      el.addEventListener("dragleave", () => el.classList.remove("drag"));
+      el.addEventListener("drop", (e) => {
+        e.preventDefault();
+        el.classList.remove("drag");
+        const f = e.dataTransfer.files?.[0];
+        if (f) loadFile(f, kind);
+      });
+      input.addEventListener("change", () => {
+        const f = input.files?.[0];
+        if (f) loadFile(f, kind);
+      });
+    }
+    wireDrop(document.getElementById("dropSrc"));
+    wireDrop(document.getElementById("dropFlow"));
+
+    const elStrength = document.getElementById("strength");
+    const elSpeed = document.getElementById("speed");
+    const elTime = document.getElementById("time");
+    const elPlay = document.getElementById("play");
+    const elPing = document.getElementById("pingpong");
+    const elShowFlow = document.getElementById("showFlow");
+    const elInvertY = document.getElementById("invertY");
+
+    function syncLabels() {
+      document.getElementById("vStrength").textContent = Number(elStrength.value).toFixed(3);
+      document.getElementById("vSpeed").textContent = Number(elSpeed.value).toFixed(2);
+      document.getElementById("vTime").textContent = Number(elTime.value).toFixed(2);
+    }
+    [elStrength, elSpeed, elTime].forEach((el) => el.addEventListener("input", syncLabels));
+    syncLabels();
+
+    elTime.addEventListener("input", () => {
+      state.time = Number(elTime.value);
+    });
+
+    function frame(now) {
+      const dt = Math.min(0.05, (now - state.last) / 1000);
+      state.last = now;
+      if (elPlay.checked) {
+        state.time += dt * Number(elSpeed.value);
+        elTime.value = String(state.time % 10);
+        document.getElementById("vTime").textContent = Number(elTime.value).toFixed(2);
+      }
+
+      gl.viewport(0, 0, canvas.width, canvas.height);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, texSrc);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, texFlow);
+
+      gl.uniform1f(loc.uStrength, Number(elStrength.value));
+      gl.uniform1f(loc.uTime, state.time);
+      gl.uniform1f(loc.uHasSrc, state.hasSrc ? 1 : 0);
+      gl.uniform1f(loc.uHasFlow, state.hasFlow ? 1 : 0);
+      gl.uniform1f(loc.uShowFlow, elShowFlow.checked ? 1 : 0);
+      gl.uniform1f(loc.uPingPong, elPing.checked ? 1 : 0);
+      gl.uniform1f(loc.uInvertY, elInvertY.checked ? 1 : 0);
+
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  </script>
+</body>
+</html>
