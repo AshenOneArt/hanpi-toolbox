@@ -2,9 +2,11 @@
 
 跟工程无关的 GPU / 贴图调试小工具集合（GitHub Pages 静态站点）。
 
+**入口首页 → [https://ashenoneart.github.io/hanpi-toolbox/](https://ashenoneart.github.io/hanpi-toolbox/)**
+
 ## 工具
 
-- [Flowmap Viewer](./flowmap/) — 拖入原图 + Flowmap，WebGL 实时预览 UV 扭曲
+- [Flowmap Viewer](https://ashenoneart.github.io/hanpi-toolbox/flowmap/) — 拖入原图 + Flowmap，WebGL 实时预览 UV 扭曲
 
 ## 本地预览
 
